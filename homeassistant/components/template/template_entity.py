@@ -35,6 +35,8 @@ from homeassistant.helpers.event import (
     TrackTemplateResultInfo,
     async_track_template_result,
 )
+from homeassistant.helpers.device_registry import async_get as device_registry_get
+from homeassistant.helpers.entity_registry import async_get as entity_registry_get
 from homeassistant.helpers.script import Script, _VarsType
 from homeassistant.helpers.start import async_at_start
 from homeassistant.helpers.template import (
@@ -278,6 +280,7 @@ class TemplateEntity(Entity):
             ],
             None,
         ] | None = None
+        self.hass = hass
         if config is None:
             self._attribute_templates = attribute_templates
             self._availability_template = availability_template
@@ -441,6 +444,7 @@ class TemplateEntity(Entity):
             self._preview_callback(None, None, None, str(err))
         else:
             assert self._template_result_info
+            self.update_device()
             self._preview_callback(
                 calculated_state.state,
                 calculated_state.attributes,
@@ -484,6 +488,7 @@ class TemplateEntity(Entity):
         self.async_on_remove(result_info.async_remove)
         self._template_result_info = result_info
         result_info.async_refresh()
+        self.update_device()
 
     @callback
     def _async_setup_templates(self) -> None:
@@ -537,6 +542,52 @@ class TemplateEntity(Entity):
         except Exception as err:  # pylint: disable=broad-exception-caught
             preview_callback(None, None, None, str(err))
         return self._call_on_remove_callbacks
+
+    @property
+    def device_info(self) -> dict | None:
+        if self.unique_id is None: # temporary templates don't have unique_ids
+            return None
+        identifier = ("template","template_" + self.unique_id)
+        return {
+            "identifiers": {identifier},
+            "name": f"Device for {self.name}"
+        }
+
+    def update_device(self):
+        if self._template_result_info is None:
+            _LOGGER.warn(f"No result yet for this template, skipping device update, please report this")
+            return
+        if self.device_info is None:
+            _LOGGER.debug("No device to update for this template, this is a temporary template")
+            return
+
+        entity_registry = entity_registry_get(self.hass)
+        device_registry = device_registry_get(self.hass)
+
+        entities = self._template_result_info.listeners.get("entities", set())
+        device_ids = set()
+        for entity_id in entities:
+            entry = entity_registry.async_get(entity_id)
+            if entry is None:
+                _LOGGER.warn(f"Impossible to find {entity_id} in registry, maybe it does not exist or is a dangling reference")
+                continue
+            if entry.device_id is not None:
+                device_ids.add(entry.device_id)
+        if len(device_ids) == 0:
+            _LOGGER.debug(f"Template is attached to entities that don't belong to any device")
+            return
+        if len(device_ids) > 1:
+            _LOGGER.info(f"Template is attached to entities attached to distinct devices, ignoring")
+            return
+        device_id = list(device_ids)[0]
+        device = device_registry.async_get(device_id)
+        if device is None:
+            _LOGGER.warn(f"Device {device_id} could not be found in device registry")
+            return None
+        my_device = device_registry.async_get_device(identifiers=self.device_info["identifiers"])
+        assert my_device is not None
+        _LOGGER.info(f"Updating device {my_device.id} ({my_device.name}) to use via_device={device.id}")
+        device_registry.async_update_device(my_device.id, via_device_id=device.id)
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
