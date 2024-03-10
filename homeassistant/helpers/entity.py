@@ -776,6 +776,7 @@ class Entity(
             return self._attr_extra_state_attributes
         return None
 
+    # FIXME(kamaradclimber): allow to bust cache when this change
     @cached_property
     def device_info(self) -> DeviceInfo | None:
         """Return device specific attributes.
@@ -1574,6 +1575,35 @@ class Entity(
             type(self),
             repr(replacement),
             report_issue,
+        )
+
+    def invalidate_device_info(self):
+        """
+        This method needs to be called by entity implementation to reflect that device_info value has been updated
+        """
+
+        new_device_info = self.device_info
+        if not self.platform.config_entry or not new_device_info:
+            return
+        try:
+            device = dr.async_get(self.hass).async_get_or_create(
+                config_entry_id=self.platform.config_entry.entry_id,
+                **new_device_info,
+            )
+        except dr.DeviceInfoError as exc:
+            _LOGGER.error("%s: Invalid device info, update will be ignored",
+                self.platform.platform_name,
+                str(exc),
+            )
+            return
+        # FIXME(kamaradclimber): the code above could be moved to entity_platform.py instead
+
+        if self.registry_entry is None:
+            return
+        _LOGGER.info("Updating device of %s to be %s", self.registry_entry.entity_id, device.id)
+        er.async_get(self.hass).async_update_entity(
+                self.registry_entry.entity_id,
+                device_id=device.id
         )
 
 

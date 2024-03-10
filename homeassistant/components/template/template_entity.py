@@ -543,22 +543,12 @@ class TemplateEntity(Entity):
             preview_callback(None, None, None, str(err))
         return self._call_on_remove_callbacks
 
-    @property
-    def device_info(self) -> dict | None:
-        if self.unique_id is None: # temporary templates don't have unique_ids
-            return None
-        identifier = ("template","template_" + self.unique_id)
-        return {
-            "identifiers": {identifier},
-            "name": f"Device for {self.name}"
-        }
-
     def update_device(self):
         if self._template_result_info is None:
             _LOGGER.warn(f"No result yet for this template, skipping device update, please report this")
             return
-        if self.device_info is None:
-            _LOGGER.debug("No device to update for this template, this is a temporary template")
+        if self.unique_id is None:
+            _LOGGER.debug("No unique_id for this template, this is a temporary template or defined through configuration.yaml")
             return
 
         entity_registry = entity_registry_get(self.hass)
@@ -569,7 +559,7 @@ class TemplateEntity(Entity):
         for entity_id in entities:
             entry = entity_registry.async_get(entity_id)
             if entry is None:
-                _LOGGER.warn(f"Impossible to find {entity_id} in registry, maybe it does not exist or is a dangling reference")
+                _LOGGER.warn(f"Impossible to find entity {entity_id} in registry, maybe it does not exist or is a dangling reference")
                 continue
             if entry.device_id is not None:
                 device_ids.add(entry.device_id)
@@ -584,10 +574,10 @@ class TemplateEntity(Entity):
         if device is None:
             _LOGGER.warn(f"Device {device_id} could not be found in device registry")
             return None
-        my_device = device_registry.async_get_device(identifiers=self.device_info["identifiers"])
-        assert my_device is not None
-        _LOGGER.info(f"Updating device {my_device.id} ({my_device.name}) to use via_device={device.id}")
-        device_registry.async_update_device(my_device.id, via_device_id=device.id)
+        self._attr_device_info = {
+                "identifiers": device.identifiers,
+        }
+        self.invalidate_device_info()
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
