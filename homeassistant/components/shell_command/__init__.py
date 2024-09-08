@@ -22,7 +22,7 @@ from homeassistant.util.json import JsonObjectType
 
 DOMAIN = "shell_command"
 
-COMMAND_TIMEOUT = 60
+COMMAND_TIMEOUT = 600
 
 _LOGGER = logging.getLogger(__name__)
 
