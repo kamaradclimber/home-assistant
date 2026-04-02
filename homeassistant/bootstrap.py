@@ -610,7 +610,18 @@ async def async_enable_logging(
 
     # If the above initialization failed for any reason, setup the default
     # formatting.  If the above succeeds, this will result in a no-op.
-    logging.basicConfig(format=fmt, datefmt=FORMAT_DATETIME, level=logging.INFO)
+    # custom logging setup for datadog integration
+    import json_log_formatter
+    import threading
+    from .const import __version__ as VERSION_FOR_LOGS
+    class CustomJSONFormatter(json_log_formatter.VerboseJSONFormatter):
+        def json_record(self, message, extra, record):
+            extra['version'] = VERSION_FOR_LOGS
+            return super(CustomJSONFormatter, self).json_record(message, extra, record)
+    formatter = CustomJSONFormatter()
+    json_handler = logging.StreamHandler()
+    json_handler.setFormatter(formatter)
+    logging.root.addHandler(json_handler)
 
     # Capture warnings.warn(...) and friends messages in logs.
     # The standard destination for them is stderr, which may end up unnoticed.
