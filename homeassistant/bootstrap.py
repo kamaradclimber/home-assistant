@@ -619,7 +619,15 @@ async def async_enable_logging(
     # basicConfig must be called after importing colorlog in order to
     # ensure that the handlers it sets up wraps the correct streams.
     logging.basicConfig(level=logging.INFO)
-    logging.getLogger().handlers[0].setFormatter(formatter)
+
+    # custom logging setup for datadog integration
+    import json_log_formatter
+    from .const import __version__ as VERSION_FOR_LOGS
+    class CustomJSONFormatter(json_log_formatter.VerboseJSONFormatter):
+        def json_record(self, message, extra, record):
+            extra['version'] = VERSION_FOR_LOGS
+            return super(CustomJSONFormatter, self).json_record(message, extra, record)
+    logging.getLogger().handlers[0].setFormatter(CustomJSONFormatter())
 
     # Capture warnings.warn(...) and friends messages in logs.
     # The standard destination for them is stderr, which may end up unnoticed.
